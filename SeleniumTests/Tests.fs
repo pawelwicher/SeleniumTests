@@ -8,6 +8,7 @@ open Xunit
 open Xunit.Sdk
 open OpenQA.Selenium
 open OpenQA.Selenium.Chrome
+open OpenQA.Selenium.Support.UI
 
 type WikipediaTestDataAttribute() =
     inherit DataAttribute()
@@ -16,26 +17,42 @@ type WikipediaTestDataAttribute() =
 
 module Tests =
 
+    let private findBySelector (driver : IWebDriver) (selector : string) : IWebElement =
+        let wait = WebDriverWait(driver, TimeSpan.FromSeconds(10.0))
+        wait.Until(fun x -> selector |> By.CssSelector |> x.FindElement)
+
+    let private findAllBySelector (driver : IWebDriver) (selector : string) : IWebElement list =
+        let wait = WebDriverWait(driver, TimeSpan.FromSeconds(10.0))
+        wait.Until(fun x -> selector |> By.CssSelector |> x.FindElements) |> Seq.toList
+
     [<Trait("Category", "Automation")>]
     [<Theory>]
     [<WikipediaTestData>]
     let ``Search in Wikipedia`` (searchTerm : string) =
         let options = ChromeOptions()
         options.AddArgument("--no-sandbox")
+        options.AddArgument("--start-maximized")
+
         use driver = new ChromeDriver(options)
 
-        let navigation : INavigation = driver.Navigate()
+        let navigation = driver.Navigate()
         navigation.GoToUrl("https://www.google.pl/")
 
-        let element : IWebElement = driver.FindElementByCssSelector @"input[name=""q""]"
+        let element = findBySelector driver @"input[name=""q""]"
         element.SendKeys (sprintf "%s Wikipedia" searchTerm)
         element.SendKeys Keys.Enter
 
-        let element : IWebElement = driver.FindElementByCssSelector "a > h3"
+        let element = findBySelector driver "a > h3"
         element.Click()
 
-        let text = driver.FindElementsByTagName "p" |> Seq.map (fun x -> x.Text) |> Seq.toArray |> String.concat "\n\n"
-        let path = sprintf "%s\%s.txt" (Environment.GetFolderPath Environment.SpecialFolder.Desktop) searchTerm
-        File.WriteAllText(path, text)        
+        let desktopPath = Environment.GetFolderPath Environment.SpecialFolder.Desktop
+        let screenshotFilePath = sprintf "%s\%s.png" desktopPath searchTerm
+        let textFilePath = sprintf "%s\%s.txt" desktopPath searchTerm
 
-        File.Exists path |> should be True
+        let screenshotMaker = driver :> ITakesScreenshot
+        screenshotMaker.GetScreenshot().SaveAsFile(screenshotFilePath, ScreenshotImageFormat.Png)
+
+        let text = findAllBySelector driver "p" |> Seq.map (fun x -> x.Text) |> Seq.toArray |> String.concat "\n\n"
+        File.WriteAllText(textFilePath, text)        
+
+        File.Exists textFilePath |> should be True
